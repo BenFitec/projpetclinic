@@ -1,0 +1,139 @@
+pipeline{
+    agent any
+    
+    environment {
+        img1 = ''
+        img = ''
+        //The "dockerhub" credentials must be created in jenkins configuration
+        registryCredential = 'dockerhub'
+        registryName = 'ben93170'
+        registryURL = 'ben93170.azurecr.io'
+        registryCredential1 = 'ACR'
+        
+        //TODO: Check if this variable can be declared here instead of configuration
+        //DOCKER_HOST = "tcp://192.168.122.10:2375"
+    }
+    
+  //  environnement{
+    //    registryName = "MybenRegistry"
+//    }
+    tools {
+        maven 'M3'
+        terraform 'terraform'
+    }
+stages {
+        stage('Build Maven') {
+            steps{  checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[credentialsId: 'ben93170', url: 'https://github.com/BenFitec/projpetclinic.git'] ]])
+                // sh "mvn -Dmaven.test.failure.ignore=true "
+                 
+                 sh "mvn -Dmaven.test.failure.ignore=true clean package -PSQLpetclinic"
+            }
+            
+            //post {
+             //  always {
+              //    junit "proj_petclinic/target/surefire-reports/TEST-*.xml"
+            //   }
+         //  } 
+        }
+        
+       
+       //stage('Test'){
+         //  steps{
+           //    sh 'mvn Test'
+               
+           //     }
+           //post {
+               //always {
+                  // junit '/home/ben/TEST/test.xml'
+               //}
+         //  } 
+           
+        stage('Docker Build') {
+            steps {
+                // Build the docker image if installed on jenkins server
+                // sh "docker build -t demoapp:1.0 ."
+                // If not we use the docker plugin. Here "docker" is the name of the "cloud" in Global Configuration Tools
+                script {
+                    // def customImage = docker.build("my-image:${env.BUILD_ID}")
+                    img = docker.build("ben93170/petclinic:${env.BUILD_ID}")
+                    //img1 = docker.build registryName
+                    // img become an object: how to use it in another stage ?
+                }
+            }
+        }   
+           
+        
+       stage('Publish Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry('',registryCredential) {
+                        img.push()
+                    }
+                }
+            }
+       }
+       
+       
+        
+        stage('Upload vers ACR') {
+            steps{
+                script {
+                    docker.withRegistry('http://ben93170.azurecr.io', registryCredential1 ) {
+                
+                    img.push()
+                    }
+                }
+                
+            }
+        }
+        
+     /*   stage('Deploy') {
+      steps {
+        container('kubectl') {
+          sh "kubectl apply -f deployement.yaml"
+         
+        }
+      }
+    }*/
+        
+        
+          stage ('K8S Deploy') {
+             steps {
+                 script {
+                     kubernetesDeploy configs: 'deployement.yml', kubeConfig: [path: ''], kubeconfigId: 'K8S', secretName: '', ssh: [sshCredentialsId: '*', sshServer: ''], textCredentials: [certificateAuthorityData: '', clientCertificateData: '', clientKeyData: '', serverUrl: 'https://']
+                     
+                    //kubernetesDeploy(
+                    //configs: 'deployement.yml',
+                    //credentialsId : 'K8S',
+                    //withKubeConfig([credentialsId: 'K8S'])
+                    //enableConfigSubstitution: false
+                    //{sh 'kubectl apply -f deploy.yml' }
+                              
+                }
+           }
+        }
+        
+       /* 
+        stage('Terraform Init') {
+            steps {
+                sh label: '', script: 'terraform init'
+      }
+    }
+           stage('Terraform Plan') {
+            steps {
+                sh label: '', script: 'terraform plan'
+      }
+    }
+       
+        stage('Terraform Apply') {
+            steps {
+                sh label: '', script: 'terraform appy --auto-approve'
+      }
+    }
+     */   
+     
+       }    
+     
+       
+} 
+        
